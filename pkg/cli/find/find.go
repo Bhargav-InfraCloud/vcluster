@@ -247,6 +247,38 @@ func FormatOptions(format string, options [][]string) []string {
 	return retOptions
 }
 
+// VClusterLister defines the interface for listing virtual clusters.
+type VClusterLister interface {
+	// List lists virtual clusters in the current context, filtered by name and namespace.
+	//
+	// The logger is passed as a parameter rather than a struct field to allow caller-time injection and greater
+	// flexibility. For example, the caller can choose log.Discard or logger.ErrorStreamOnly(), while initialization
+	// typically uses the default logger instance so it remains consistent across all steps in the call stack.
+	List(ctx context.Context, currentContext, name, namespace string, logger log.Logger) ([]VCluster, error)
+}
+
+// vClusterLister is a lister for virtual clusters that implements the VClusterLister interface.
+type vClusterLister struct{}
+
+// NewVClusterLister creates a new VClusterLister.
+func NewVClusterLister() VClusterLister {
+	return &vClusterLister{}
+}
+
+// List returns a list of virtual clusters in the current context, filtered by name and namespace.
+//
+// This is just a wrapper around the ListVClusters function to allow interface injection and testing.
+func (v *vClusterLister) List(
+	ctx context.Context,
+	currentContext string,
+	name string,
+	namespace string,
+	logger log.Logger,
+) ([]VCluster, error) {
+	return ListVClusters(ctx, currentContext, name, namespace, logger)
+}
+
+// TODO(Bhargav-InfraCloud): Move this logic into (*vClusterLister).List, and use that method in all calls instead.
 func ListVClusters(ctx context.Context, context, name, namespace string, log log.Logger) ([]VCluster, error) {
 	var err error
 	if context == "" {

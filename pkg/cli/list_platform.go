@@ -15,36 +15,61 @@ import (
 	"github.com/loft-sh/vcluster/pkg/cli/flags"
 	"github.com/loft-sh/vcluster/pkg/platform"
 	"k8s.io/apimachinery/pkg/util/duration"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
-func ListPlatform(ctx context.Context, options *ListOptions, globalFlags *flags.GlobalFlags, logger log.Logger, projectName string, showUserOwned bool) error {
-	rawConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(clientcmd.NewDefaultClientConfigLoadingRules(), &clientcmd.ConfigOverrides{}).RawConfig()
+// platformVClusterLister should implement VClusterLister[ListProVCluster] to list Platform based vClusters.
+var _ VClusterLister[ListProVCluster] = (*platformVClusterLister)(nil)
+
+// platformVClusterLister is a lister for Platform based vClusters.
+type platformVClusterLister struct {
+	globalFlags        *flags.GlobalFlags
+	listOptions        *ListOptions
+	logger             log.Logger
+	helmVClusterLister find.VClusterLister
+	platformLister     platform.PlatformLister
+}
+
+// NewPlatformVClusterLister creates a new platformVClusterLister.
+func NewPlatformVClusterLister(
+	listOptions *ListOptions,
+	globalFlags *flags.GlobalFlags,
+	logger log.Logger,
+	platformLister platform.PlatformLister,
+	helmLister find.VClusterLister,
+) (VClusterLister[ListProVCluster], error) {
+	return &platformVClusterLister{
+		globalFlags:        globalFlags,
+		listOptions:        listOptions,
+		logger:             logger,
+		platformLister:     platformLister,
+		helmVClusterLister: helmLister,
+	}, nil
+}
+
+// GetName is a getter for the Name field for ListProVCluster.
+func (l ListProVCluster) GetName() string {
+	return l.Name
+}
+
+// List returns a list of all the Platform based vClusters.
+func (p *platformVClusterLister) List(
+	ctx context.Context,
+	projectName string,
+	showUserOwned bool,
+) ([]ListProVCluster, error) {
+	// List the Platform vClusters.
+	proVClusters, err := p.platformLister.List(ctx, "", projectName, showUserOwned)
 	if err != nil {
-		return err
-	}
-	currentContext := rawConfig.CurrentContext
-
-	if globalFlags.Context == "" {
-		globalFlags.Context = currentContext
+		return nil, err
 	}
 
-	platformClient, err := platform.InitClientFromConfig(ctx, globalFlags.LoadedConfig(logger))
-	if err != nil {
-		return err
-	}
+	// Convert to output format to simpler structure for easier printing.
+	return proToVClusters(proVClusters, p.globalFlags.Context), nil
+}
 
-	proVClusters, err := platform.ListVClusters(ctx, platformClient, "", projectName, showUserOwned)
-	if err != nil {
-		return err
-	}
-
-	err = printProVClusters(ctx, options, proToVClusters(proVClusters, currentContext), globalFlags, logger)
-	if err != nil {
-		return err
-	}
-
-	return nil
+// Print prints the list of Platform based vClusters.
+func (p *platformVClusterLister) Print(ctx context.Context, proVClusters []ListProVCluster) error {
+	return printProVClusters(ctx, p.listOptions, proVClusters, p.globalFlags, p.logger, p.helmVClusterLister)
 }
 
 func proToVClusters(vClusters []*platform.VirtualClusterInstanceProject, currentContext string) []ListProVCluster {
@@ -87,7 +112,14 @@ func proToVClusters(vClusters []*platform.VirtualClusterInstanceProject, current
 	return output
 }
 
-func printProVClusters(ctx context.Context, options *ListOptions, output []ListProVCluster, globalFlags *flags.GlobalFlags, logger log.Logger) error {
+func printProVClusters(
+	ctx context.Context,
+	options *ListOptions,
+	output []ListProVCluster,
+	globalFlags *flags.GlobalFlags,
+	logger log.Logger,
+	helmVClusterLister find.VClusterLister,
+) error {
 	if options.Output == "json" {
 		bytes, err := json.MarshalIndent(output, "", "    ")
 		if err != nil {
@@ -100,17 +132,33 @@ func printProVClusters(ctx context.Context, options *ListOptions, output []ListP
 		values := toTableValues(output)
 		table.PrintTable(logger, header, values)
 
-		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
+		// If the Helm vCluster lister is available, check if there are any Helm vClusters and show a message
+		// in the output. This is to inform the user that there are other types of vClusters available.
+		if helmVClusterLister != nil {
+			// Add a timeout to avoid hanging if the Helm client is not responsive. Since this is an additional
+			// check, if it times out, we can just ignore it and not show the message about Helm vClusters.
+			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
 
-		vClusters, _ := find.ListVClusters(ctx, globalFlags.Context, "", "", log.Discard)
-		if len(vClusters) > 0 {
-			logger.Infof("You also have %d virtual clusters in your current kube-context.", len(vClusters))
-			logger.Info("If you want to see them, run: 'vcluster list --driver helm' or 'vcluster use driver helm' to change the default")
+			// List Helm vClusters.
+			//
+			// Note: The error is discarded because this step is optional when the driver is Platform. If the listing
+			// fails, the error is ignored and the message will not be shown.
+			vClusters, _ := helmVClusterLister.List(ctx, globalFlags.Context, "", "", log.Discard)
+			if len(vClusters) > 0 {
+				logger.Infof("You also have %d virtual clusters in your current kube-context.", len(vClusters))
+				logger.Info("If you want to see them, run: 'vcluster list --driver helm' or " +
+					"'vcluster use driver helm' to change the default")
+			}
+		} else {
+			// If the Helm vCluster lister is not available, it is logged (in debug mode) and the Helm vClusters check
+			// is skipped.
+			logger.Debug("Helm client is not available. Skipping check for Helm vClusters.")
 		}
 
-		// show disconnect command
-		if strings.HasPrefix(globalFlags.Context, "vcluster_") || strings.HasPrefix(globalFlags.Context, "vcluster-platform_") {
+		// Check if the current context is connected to any vCluster and show a message for disconnecting.
+		if strings.HasPrefix(globalFlags.Context, "vcluster_") ||
+			strings.HasPrefix(globalFlags.Context, "vcluster-platform_") {
 			logger.Infof("Run `vcluster disconnect` to switch back to the parent context")
 		}
 	}

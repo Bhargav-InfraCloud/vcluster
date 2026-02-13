@@ -949,6 +949,43 @@ func RetrieveCaData(cluster *managementv1.Cluster) ([]byte, error) {
 	return data, nil
 }
 
+// PlatformLister defines the interface for listing virtual clusters in the platform.
+//
+// TODO(Bhargav-InfraCloud): Generalize this interface by converting additional functions into methods and replacing all
+// call sites. This will enable mocking in tests and prevent calls to the real API server.
+type PlatformLister interface {
+	List(
+		ctx context.Context,
+		virtualClusterName string,
+		projectName string,
+		showUserOwned bool,
+	) ([]*VirtualClusterInstanceProject, error)
+}
+
+// platformLister is a lister for virtual clusters that implements the PlatformLister interface.
+type platformLister struct {
+	Client Client
+}
+
+// NewPlatformLister creates a new PlatformLister.
+func NewPlatformLister(client Client) PlatformLister {
+	return &platformLister{
+		Client: client,
+	}
+}
+
+// List returns a list of virtual clusters in the current context, filtered by name and namespace.
+//
+// This is just a wrapper around the ListVClusters function to allow interface injection and testing.
+func (p *platformLister) List(
+	ctx context.Context,
+	virtualClusterName string,
+	projectName string,
+	showUserOwned bool,
+) ([]*VirtualClusterInstanceProject, error) {
+	return ListVClusters(ctx, p.Client, virtualClusterName, projectName, showUserOwned)
+}
+
 // ListVClusters lists all virtual clusters across all projects if virtualClusterName and projectName are empty.
 // The list can be narrowed down by the given virtual cluster name and project name.
 func ListVClusters(ctx context.Context, client Client, virtualClusterName, projectName string, showUserOwned bool) ([]*VirtualClusterInstanceProject, error) {

@@ -666,7 +666,7 @@ func ensureVClusterNodes(ctx context.Context, kubernetesDir, vClusterConfigDir, 
 
 	// add the nodes that are not in the config
 	for _, node := range vClusterConfig.Experimental.Docker.Nodes {
-		_, found := lo.Find(nodes, func(n dockerVCluster) bool {
+		_, found := lo.Find(nodes, func(n DockerVCluster) bool {
 			return node.Name == n.Name
 		})
 		if !found {

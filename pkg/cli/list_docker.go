@@ -16,48 +16,77 @@ import (
 	"github.com/loft-sh/vcluster/pkg/constants"
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/util/duration"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
-// dockerVCluster holds information about a docker-based vCluster
-type dockerVCluster struct {
+// dockerVClusterLister should implement VClusterLister[DockerVCluster] to list Docker based vClusters.
+var _ VClusterLister[DockerVCluster] = (*dockerVClusterLister)(nil)
+
+// DockerVCluster holds information about a docker-based vCluster
+type DockerVCluster struct {
 	Name      string
 	Status    string
 	Created   time.Time
 	Connected bool
 }
 
-func ListDocker(ctx context.Context, options *ListOptions, globalFlags *flags.GlobalFlags, log log.Logger) error {
-	// find all vcluster containers
-	vClusters, err := findDockerContainer(ctx, constants.DockerControlPlanePrefix)
+// dockerVClusterLister is a lister for Docker based vClusters.
+type dockerVClusterLister struct {
+	globalFlags           *flags.GlobalFlags
+	listOptions           *ListOptions
+	logger                log.Logger
+	dockerContainerLister DockerContainerLister
+}
+
+// NewDockerVClusterLister creates a new dockerVClusterLister.
+func NewDockerVClusterLister(
+	listOptions *ListOptions,
+	globalFlags *flags.GlobalFlags,
+	logger log.Logger,
+	dockerContainerLister DockerContainerLister,
+) (VClusterLister[DockerVCluster], error) {
+	return &dockerVClusterLister{
+		globalFlags:           globalFlags,
+		listOptions:           listOptions,
+		logger:                logger,
+		dockerContainerLister: dockerContainerLister,
+	}, nil
+}
+
+// GetName is a getter for the Name field for dockerVCluster.
+func (d DockerVCluster) GetName() string {
+	return d.Name
+}
+
+// List returns a list of all the Docker based vClusters.
+//
+// The projectName and showUserOwned parameters are ignored for Docker based vClusters as they are not applicable.
+func (d *dockerVClusterLister) List(ctx context.Context, _ string, _ bool) ([]DockerVCluster, error) {
+	// List the Docker vClusters.
+	vClusters, err := d.dockerContainerLister.Find(ctx, constants.DockerControlPlanePrefix)
 	if err != nil {
-		return fmt.Errorf("failed to list docker vclusters: %w", err)
+		return nil, fmt.Errorf("failed to list Docker based vClusters: %w", err)
 	}
 
-	// get current context to check if connected
-	rawConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		clientcmd.NewDefaultClientConfigLoadingRules(),
-		&clientcmd.ConfigOverrides{},
-	).RawConfig()
-	if err != nil {
-		log.Debugf("Failed to load kubeconfig: %v", err)
-	}
-	currentContext := rawConfig.CurrentContext
-
-	// mark connected vclusters
+	// Mark connected vClusters.
 	for i := range vClusters {
 		expectedContext := "vcluster-docker_" + vClusters[i].Name
-		vClusters[i].Connected = currentContext == expectedContext
+		vClusters[i].Connected = d.globalFlags.Context == expectedContext
 	}
 
-	// print output
-	if options.Output == "json" {
-		// convert to ListVCluster format for consistent JSON output
+	return vClusters, nil
+}
+
+// Print prints the list of Docker based vClusters.
+func (d *dockerVClusterLister) Print(ctx context.Context, vClusters []DockerVCluster) error {
+	// Print vClusters.
+	if d.listOptions.Output == "json" {
+		// For JSON output, convert the Docker vClusters to the common ListVCluster format.
 		output := make([]ListVCluster, len(vClusters))
 		for i, vc := range vClusters {
 			output[i] = ListVCluster{
-				Name:       vc.Name,
-				Namespace:  "docker", // use "docker" as namespace placeholder
+				Name: vc.Name,
+				// Use "docker" as namespace placeholder.
+				Namespace:  "docker",
 				Status:     vc.Status,
 				Created:    vc.Created,
 				AgeSeconds: int(time.Since(vc.Created).Round(time.Second).Seconds()),
@@ -65,21 +94,45 @@ func ListDocker(ctx context.Context, options *ListOptions, globalFlags *flags.Gl
 			}
 		}
 
+		// Marshal to JSON and print.
 		bytes, err := json.MarshalIndent(output, "", "    ")
 		if err != nil {
 			return fmt.Errorf("json marshal vClusters: %w", err)
 		}
-		log.WriteString(logrus.InfoLevel, string(bytes)+"\n")
-	} else {
-		header := []string{"NAME", "STATUS", "CONNECTED", "AGE"}
-		values := dockerVClustersToValues(vClusters)
-		table.PrintTable(log, header, values)
+		d.logger.WriteString(logrus.InfoLevel, string(bytes)+"\n")
+
+		return nil
 	}
+
+	// Print as table.
+	header := []string{"NAME", "STATUS", "CONNECTED", "AGE"}
+	values := dockerVClustersToValues(vClusters)
+	table.PrintTable(d.logger, header, values)
 
 	return nil
 }
 
-func findDockerContainer(ctx context.Context, prefix string) ([]dockerVCluster, error) {
+// DockerContainerLister is an interface to list Docker containers that represent vClusters.
+type DockerContainerLister interface {
+	Find(ctx context.Context, prefix string) ([]DockerVCluster, error)
+}
+
+// dockerContainerLister is a lister for virtual clusters that implements the DockerContainerLister interface.
+type dockerContainerLister struct{}
+
+// NewDockerContainerLister creates a new dockerContainerLister.
+func NewDockerContainerLister() DockerContainerLister {
+	return &dockerContainerLister{}
+}
+
+// Find finds Docker containers with names starting with the given prefix and returns them as DockerVCluster instances.
+//
+// This is just a wrapper around the findDockerContainer function to allow interface injection and testing.
+func (d *dockerContainerLister) Find(ctx context.Context, prefix string) ([]DockerVCluster, error) {
+	return findDockerContainer(ctx, prefix)
+}
+
+func findDockerContainer(ctx context.Context, prefix string) ([]DockerVCluster, error) {
 	// list all containers with name starting with the prefix
 	args := []string{"ps", "-a", "--filter", "name=^" + prefix, "--format", "{{.ID}}"}
 	out, err := exec.CommandContext(ctx, "docker", args...).Output()
@@ -102,7 +155,7 @@ func findDockerContainer(ctx context.Context, prefix string) ([]dockerVCluster, 
 	}
 
 	// inspect each container to get details
-	var vClusters []dockerVCluster
+	var vClusters []DockerVCluster
 	for _, containerID := range containerIDs {
 		details, err := inspectDockerContainerForList(ctx, containerID)
 		if err != nil {
@@ -122,7 +175,7 @@ func findDockerContainer(ctx context.Context, prefix string) ([]dockerVCluster, 
 			created = time.Time{}
 		}
 
-		vClusters = append(vClusters, dockerVCluster{
+		vClusters = append(vClusters, DockerVCluster{
 			Name:    name,
 			Status:  details.State.Status,
 			Created: created,
@@ -158,7 +211,7 @@ func inspectDockerContainerForList(ctx context.Context, containerID string) (*do
 	return &results[0], nil
 }
 
-func dockerVClustersToValues(vClusters []dockerVCluster) [][]string {
+func dockerVClustersToValues(vClusters []DockerVCluster) [][]string {
 	var values [][]string
 	for _, vc := range vClusters {
 		isConnected := ""
