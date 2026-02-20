@@ -385,6 +385,9 @@ func VClusterContextName(vClusterName string, vClusterNamespace string, currentC
 	return "vcluster_" + vClusterName + "_" + vClusterNamespace + "_" + currentContext
 }
 
+// VClusterPlatformContextName formats the context name for a platform based vCluster. The format is:
+//
+//	vcluster-platform_<vcluster-name>_<project-name>_<kube-context-name>
 func VClusterPlatformContextName(vClusterName string, projectName string, currentContext string) string {
 	return "vcluster-platform_" + vClusterName + "_" + projectName + "_" + currentContext
 }
