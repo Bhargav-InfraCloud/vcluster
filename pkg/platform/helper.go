@@ -953,6 +953,8 @@ func RetrieveCaData(cluster *managementv1.Cluster) ([]byte, error) {
 //
 // TODO(Bhargav-InfraCloud): Generalize this interface by converting additional functions into methods and replacing all
 // call sites. This will enable mocking in tests and prevent calls to the real API server.
+//
+//go:generate mockery
 type PlatformLister interface {
 	List(
 		ctx context.Context,

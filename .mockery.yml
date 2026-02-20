@@ -1,0 +1,48 @@
+# Global configuration.
+#
+# Disable automatic mock generation. Only explicitly defined interfaces will be mocked.
+all: false
+# Use the testify template (since all the tests that use mocks use testify assertions).
+template: testify
+# Naming pattern for generated mock structs.
+# Example: VClusterLister -> MockVClusterLister.
+structname: "{{.Mock}}{{.InterfaceName}}"
+# Package name used inside generated mock files.
+# Example: Package `pkg/cli/find` -> Mock package name `find`.
+pkgname: "{{.SrcPackageName}}"
+# Only process explicitly listed packages (no subpackage recursion).
+recursive: false
+
+# Package-specific configuration.
+packages:
+  # Package `pkg/cli/find` configuration.
+  github.com/loft-sh/vcluster/pkg/cli/find:
+    config:
+      # Mocks directory for current package: `pkg/mocks/cli/find/`
+      # - `pkg/mocks/` - Common directory for all mocks in the /pkg/ directory.
+      # - `cli/find/`  - Corresponds to the original package structure.
+      dir: "{{.InterfaceDir}}/../../mocks/cli/find"
+
+    # Interface-specific configuration.
+    interfaces:
+      # Interface `VClusterLister` configuration.
+      VClusterLister:
+        config:
+          # Output file name for this interface mock. This corresponds to the original file name.
+          filename: find.go
+
+  # Package `pkg/platform` configuration.
+  github.com/loft-sh/vcluster/pkg/platform:
+    config:
+      # Mocks directory for current package: `pkg/mocks/platform/`
+      # - `pkg/mocks/` - Common directory for all mocks in the /pkg/ directory.
+      # - `platform/`  - Corresponds to the original package structure.
+      dir: "{{.InterfaceDir}}/../mocks/platform"
+
+    # Interface-specific configuration.
+    interfaces:
+      # Interface `PlatformLister` configuration.
+      PlatformLister:
+        config:
+          # Output file name for this interface mock. This corresponds to the original file name.
+          filename: helper.go

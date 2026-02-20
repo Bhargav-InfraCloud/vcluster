@@ -248,6 +248,8 @@ func FormatOptions(format string, options [][]string) []string {
 }
 
 // VClusterLister defines the interface for listing virtual clusters.
+//
+//go:generate mockery
 type VClusterLister interface {
 	// List lists virtual clusters in the current context, filtered by name and namespace.
 	//
@@ -376,6 +378,9 @@ func ListOSSVClusters(ctx context.Context, kubeClient kube.Interface, context, n
 	return vclusters, nil
 }
 
+// VClusterContextName formats the context name for a vCluster. The format is:
+//
+//	vcluster_<vcluster-name>_<vcluster-namespace>_<kube-context-name>
 func VClusterContextName(vClusterName string, vClusterNamespace string, currentContext string) string {
 	return "vcluster_" + vClusterName + "_" + vClusterNamespace + "_" + currentContext
 }

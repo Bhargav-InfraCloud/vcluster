@@ -46,6 +46,7 @@ require (
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/spf13/cobra v1.10.0
 	github.com/spf13/pflag v1.0.9
+	github.com/stretchr/testify v1.11.1
 	go.etcd.io/etcd/server/v3 v3.6.7
 	go.uber.org/atomic v1.11.0
 	golang.org/x/mod v0.30.0
@@ -157,6 +158,7 @@ require (
 	github.com/smallstep/pkcs7 v0.1.1 // indirect
 	github.com/stefanberger/go-pkcs11uri v0.0.0-20230803200340-78284954bff6 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/vbatts/tar-split v0.12.1 // indirect
 	github.com/vbauerster/mpb/v8 v8.10.2 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
