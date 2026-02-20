@@ -392,6 +392,13 @@ func VClusterPlatformContextName(vClusterName string, projectName string, curren
 	return "vcluster-platform_" + vClusterName + "_" + projectName + "_" + currentContext
 }
 
+// VClusterDockerContextName formats the context name for a Docker based vCluster. The format is:
+//
+//	vcluster-docker_<vcluster-name>
+func VClusterDockerContextName(vClusterName string) string {
+	return "vcluster-docker_" + vClusterName
+}
+
 func VClusterDockerFromContext(originalContext string) (name string, context string) {
 	if !strings.HasPrefix(originalContext, "vcluster-docker_") {
 		return "", ""

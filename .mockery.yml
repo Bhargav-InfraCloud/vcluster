@@ -15,6 +15,22 @@ recursive: false
 
 # Package-specific configuration.
 packages:
+  # Package `pkg/cli` configuration.
+  github.com/loft-sh/vcluster/pkg/cli:
+    config:
+      # Mocks directory for current package: `pkg/mocks/cli/`
+      # - `pkg/mocks/` - Common directory for all mocks in the /pkg/ directory.
+      # - `cli/`       - Corresponds to the original package structure.
+      dir: "{{.InterfaceDir}}/../mocks/cli"
+
+    # Interface-specific configuration.
+    interfaces:
+      # Interface `DockerContainerLister` configuration.
+      DockerContainerLister:
+        config:
+          # Output file name for this interface mock. This corresponds to the original file name.
+          filename: cli.go
+
   # Package `pkg/cli/find` configuration.
   github.com/loft-sh/vcluster/pkg/cli/find:
     config:

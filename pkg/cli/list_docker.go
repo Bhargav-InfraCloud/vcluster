@@ -113,6 +113,8 @@ func (d *dockerVClusterLister) Print(ctx context.Context, vClusters []DockerVClu
 }
 
 // DockerContainerLister is an interface to list Docker containers that represent vClusters.
+//
+//go:generate mockery
 type DockerContainerLister interface {
 	Find(ctx context.Context, prefix string) ([]DockerVCluster, error)
 }
