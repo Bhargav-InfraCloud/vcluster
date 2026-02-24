@@ -3,7 +3,6 @@ package cmd
 import (
 	"cmp"
 	"fmt"
-	"strings"
 
 	"github.com/loft-sh/log"
 	"github.com/loft-sh/vcluster/pkg/cli"
@@ -63,6 +62,7 @@ vcluster delete test --namespace test
 // Run executes the functionality
 func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	cfg := cmd.LoadedConfig(cmd.log)
+	ctx := cobraCmd.Context()
 
 	// If driver has been passed as flag use it, otherwise read it from the config file
 	driverType, err := config.ParseDriverType(cmp.Or(cmd.Driver, string(cfg.Driver.Type)))
@@ -70,34 +70,79 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse driver type: %w", err)
 	}
 
-	ctx := cobraCmd.Context()
-
-	// check if there is a platform client or we skip the info message
-	platformClient, err := platform.InitClientFromConfig(ctx, cfg)
-	if err == nil {
-		config.PrintDriverInfo("delete", driverType, cmd.log)
-	}
-
-	if driverType == config.PlatformDriver {
-		return cli.DeletePlatform(ctx, platformClient, &cmd.DeleteOptions, args[0], cmd.log)
-	}
-
-	// log error if platform flags have been set when using driver helm
-	var fs []string
-	pfs := flagsdelete.ChangedPlatformFlags(cobraCmd)
-	for pf, changed := range pfs {
-		if changed {
-			fs = append(fs, pf)
+	switch driverType {
+	case config.PlatformDriver:
+		// Initialize platform client.
+		platformClient, err := platform.InitClientFromConfig(ctx, cmd.GlobalFlags.LoadedConfig(cmd.log))
+		if err != nil {
+			return err
 		}
-	}
 
-	if len(fs) > 0 {
-		cmd.log.Fatalf("Following platform flags have been set, which won't have any effect when using driver type %s: %s", driverType, strings.Join(fs, ", "))
-	}
+		// Initialize Platform vCluster deleter.
+		platformVClusterDeleter := cli.NewPlatformVClusterDeleter(
+			platformClient,
+			&cmd.DeleteOptions,
+			cmd.GlobalFlags,
+			cmd.log,
+		)
 
-	if driverType == config.DockerDriver {
-		return cli.DeleteDocker(ctx, platformClient, &cmd.DeleteOptions, cmd.GlobalFlags, args[0], cmd.log)
-	}
+		// Delete the specified Platform vCluster.
+		return platformVClusterDeleter.Delete(ctx, cli.ListProVCluster{
+			ListVCluster: cli.ListVCluster{
+				Name: args[0],
+			},
+		})
+	case config.DockerDriver:
+		// Initialize platform client. This is optional for Docker driver.
+		platformClient, err := platform.InitClientFromConfig(ctx, cmd.GlobalFlags.LoadedConfig(cmd.log))
+		if err != nil {
+			// Since the driver type is Docker, the Platform client is used only to check whether any Platform vClusters
+			// exist with the same name, and attempt deletion. If the Platform client initialization fails, the error is
+			// logged (in debug mode) and ignored.
+			//
+			// The inner layer performs a safety check to ensure the Platform client is not nil and skips checking for
+			// Platform vClusters if it is.
+			cmd.log.Debugf("Failed to initialize platform client: %v", err)
+		}
 
-	return cli.DeleteHelm(ctx, platformClient, &cmd.DeleteOptions, cmd.GlobalFlags, args[0], cmd.log)
+		// Initialize Docker vCluster deleter.
+		dockerVClusterDeleter := cli.NewDockerVClusterDeleter(
+			platformClient,
+			&cmd.DeleteOptions,
+			cmd.GlobalFlags,
+			cmd.log,
+		)
+
+		// Delete the specified Docker vCluster.
+		return dockerVClusterDeleter.Delete(ctx, cli.DockerVCluster{
+			Name: args[0],
+		})
+	case config.HelmDriver:
+		// Initialize platform client. This is optional for Helm driver.
+		platformClient, err := platform.InitClientFromConfig(ctx, cmd.GlobalFlags.LoadedConfig(cmd.log))
+		if err != nil {
+			// Since the driver type is Helm, the Platform client is used only to check whether any Platform vClusters
+			// exist with the same name, and attempt deletion. If the Platform client initialization fails, the error is
+			// logged (in debug mode) and ignored.
+			//
+			// The inner layer performs a safety check to ensure the Platform client is not nil and skips checking for
+			// Platform vClusters if it is.
+			cmd.log.Debugf("Failed to initialize platform client: %v", err)
+		}
+
+		// Initialize Helm vCluster deleter.
+		helmVClusterDeleter := cli.NewHelmVClusterDeleter(
+			platformClient,
+			&cmd.DeleteOptions,
+			cmd.GlobalFlags,
+			cmd.log,
+		)
+
+		// Delete the specified Helm vCluster.
+		return helmVClusterDeleter.Delete(ctx, cli.ListVCluster{
+			Name: args[0],
+		})
+	default:
+		return fmt.Errorf("unsupported driver type: %s", driverType)
+	}
 }

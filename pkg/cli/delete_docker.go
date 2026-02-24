@@ -24,14 +24,40 @@ type deleteDocker struct {
 	log log.Logger
 }
 
-func DeleteDocker(ctx context.Context, platformClient platform.Client, options *DeleteOptions, globalFlags *flags.GlobalFlags, vClusterName string, log log.Logger) error {
+// dockerVClusterDeleter should implement VClusterDeleter[DockerVCluster] to list Docker based vClusters.
+var _ VClusterDeleter[DockerVCluster] = (*dockerVClusterDeleter)(nil)
+
+// dockerVClusterDeleter is a deleter for Docker based vCluster.
+type dockerVClusterDeleter struct {
+	platformClient platform.Client
+	options        *DeleteOptions
+	globalFlags    *flags.GlobalFlags
+	log            log.Logger
+}
+
+// NewDockerVClusterDeleter creates a new dockerVClusterDeleter.
+func NewDockerVClusterDeleter(
+	platformClient platform.Client,
+	options *DeleteOptions,
+	globalFlags *flags.GlobalFlags,
+	log log.Logger,
+) VClusterDeleter[DockerVCluster] {
+	return &dockerVClusterDeleter{
+		platformClient: platformClient,
+		options:        options,
+		globalFlags:    globalFlags,
+		log:            log,
+	}
+}
+
+func (d *dockerVClusterDeleter) Delete(ctx context.Context, vCluster DockerVCluster) error {
 	cmd := &deleteDocker{
-		GlobalFlags:   globalFlags,
-		DeleteOptions: options,
-		log:           log,
+		GlobalFlags:   d.globalFlags,
+		DeleteOptions: d.options,
+		log:           d.log,
 	}
 
-	return cmd.delete(ctx, platformClient, vClusterName)
+	return cmd.delete(ctx, d.platformClient, vCluster.Name)
 }
 
 func (cmd *deleteDocker) delete(ctx context.Context, platformClient platform.Client, vClusterName string) error {

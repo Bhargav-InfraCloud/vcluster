@@ -64,5 +64,18 @@ func (cmd *VClusterCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("init platform client: %w", err)
 	}
 
-	return cli.DeletePlatform(ctx, platformClient, &cmd.DeleteOptions, args[0], cmd.log)
+	// Initialize Platform vCluster deleter.
+	platformVClusterDeleter := cli.NewPlatformVClusterDeleter(
+		platformClient,
+		&cmd.DeleteOptions,
+		cmd.GlobalFlags,
+		cmd.log,
+	)
+
+	// Delete the specified Platform vCluster.
+	return platformVClusterDeleter.Delete(ctx, cli.ListProVCluster{
+		ListVCluster: cli.ListVCluster{
+			Name: args[0],
+		},
+	})
 }

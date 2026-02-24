@@ -7,53 +7,80 @@ import (
 
 	"github.com/loft-sh/log"
 	"github.com/loft-sh/vcluster/pkg/cli/find"
+	"github.com/loft-sh/vcluster/pkg/cli/flags"
 	"github.com/loft-sh/vcluster/pkg/platform"
 	"github.com/loft-sh/vcluster/pkg/platform/kube"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func DeletePlatform(ctx context.Context, platformClient platform.Client, options *DeleteOptions, vClusterName string, log log.Logger) error {
-	if platformClient == nil {
+// platformVClusterDeleter should implement VClusterDeleter[ListProVCluster] to list Platform based vClusters.
+var _ VClusterDeleter[ListProVCluster] = (*platformVClusterDeleter)(nil)
+
+// platformVClusterDeleter is a deleter for Platform based vCluster.
+type platformVClusterDeleter struct {
+	platformClient platform.Client
+	options        *DeleteOptions
+	globalFlags    *flags.GlobalFlags
+	log            log.Logger
+}
+
+// NewPlatformVClusterDeleter creates a new platformVClusterDeleter.
+func NewPlatformVClusterDeleter(
+	platformClient platform.Client,
+	options *DeleteOptions,
+	globalFlags *flags.GlobalFlags,
+	log log.Logger,
+) VClusterDeleter[ListProVCluster] {
+	return &platformVClusterDeleter{
+		platformClient: platformClient,
+		options:        options,
+		globalFlags:    globalFlags,
+		log:            log,
+	}
+}
+
+func (d *platformVClusterDeleter) Delete(ctx context.Context, vCluster ListProVCluster) error {
+	if d.platformClient == nil {
 		return fmt.Errorf("platform client not set")
 	}
 
 	// retrieve the vcluster
-	vCluster, err := find.GetPlatformVCluster(ctx, platformClient, vClusterName, options.Project, log)
+	vClusterManifest, err := find.GetPlatformVCluster(ctx, d.platformClient, vCluster.Name, d.options.Project, d.log)
 	if err != nil {
 		return err
-	} else if vCluster.VirtualCluster != nil && vCluster.VirtualCluster.Spec.External {
+	} else if vClusterManifest.VirtualCluster != nil && vClusterManifest.VirtualCluster.Spec.External {
 		return fmt.Errorf("cannot delete a virtual cluster that was created via helm, please run 'vcluster use driver helm' or use the '--driver helm' flag")
 	}
 
-	managementClient, err := platformClient.Management()
+	managementClient, err := d.platformClient.Management()
 	if err != nil {
 		return err
 	}
 
-	log.Infof("Deleting virtual cluster %s in project %s", vCluster.VirtualCluster.Name, vCluster.Project.Name)
-	err = managementClient.Loft().ManagementV1().VirtualClusterInstances(vCluster.VirtualCluster.Namespace).Delete(ctx, vCluster.VirtualCluster.Name, metav1.DeleteOptions{})
+	d.log.Infof("Deleting virtual cluster %s in project %s", vClusterManifest.VirtualCluster.Name, vClusterManifest.Project.Name)
+	err = managementClient.Loft().ManagementV1().VirtualClusterInstances(vClusterManifest.VirtualCluster.Namespace).Delete(ctx, vClusterManifest.VirtualCluster.Name, metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("delete virtual cluster: %w", err)
 	}
 
-	log.Donef("Successfully deleted virtual cluster %s in project %s", vCluster.VirtualCluster.Name, vCluster.Project.Name)
+	d.log.Donef("Successfully deleted virtual cluster %s in project %s", vClusterManifest.VirtualCluster.Name, vClusterManifest.Project.Name)
 
 	// update kube config
-	if options.DeleteContext {
-		err = deletePlatformContext(vCluster.VirtualCluster.Name, vCluster.Project.Name)
+	if d.options.DeleteContext {
+		err = deletePlatformContext(vClusterManifest.VirtualCluster.Name, vClusterManifest.Project.Name)
 		if err != nil {
 			return fmt.Errorf("delete kube context: %w", err)
 		}
 	}
 
 	// wait until deleted
-	if options.Wait {
-		log.Info("Waiting for virtual cluster to be deleted...")
-		for isVirtualClusterInstanceStillThere(ctx, managementClient, vCluster.VirtualCluster.Namespace, vCluster.VirtualCluster.Name) {
+	if d.options.Wait {
+		d.log.Info("Waiting for virtual cluster to be deleted...")
+		for isVirtualClusterInstanceStillThere(ctx, managementClient, vClusterManifest.VirtualCluster.Namespace, vClusterManifest.VirtualCluster.Name) {
 			time.Sleep(time.Second)
 		}
-		log.Done("Virtual Cluster is deleted")
+		d.log.Done("Virtual Cluster is deleted")
 	}
 
 	return nil
