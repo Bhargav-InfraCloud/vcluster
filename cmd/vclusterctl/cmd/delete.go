@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"cmp"
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/loft-sh/log"
 	"github.com/loft-sh/vcluster/pkg/cli"
 	"github.com/loft-sh/vcluster/pkg/cli/completion"
 	"github.com/loft-sh/vcluster/pkg/cli/config"
+	"github.com/loft-sh/vcluster/pkg/cli/find"
 	"github.com/loft-sh/vcluster/pkg/cli/flags"
 	flagsdelete "github.com/loft-sh/vcluster/pkg/cli/flags/delete"
 	"github.com/loft-sh/vcluster/pkg/cli/util"
@@ -42,7 +45,18 @@ Example:
 vcluster delete test --namespace test
 #######################################################
 	`,
-		Args:              util.VClusterNameOnlyValidator,
+		// Use custom argument validation to allow both the following formats:
+		// - vcluster delete <vcluster-name>	- i.e., accept one positional argument.
+		// - vcluster delete --all				- i.e., accept no positional arguments when --all is set.
+		Args: func(cmd *cobra.Command, args []string) error {
+			// If --all flag is set, allow no positional arguments.
+			if cmd.Flags().Changed("all") {
+				return cobra.NoArgs(cmd, args)
+			}
+
+			// Otherwise, require exactly one positional argument, i.e., the vCluster name.
+			return util.VClusterNameOnlyValidator(cmd, args)
+		},
 		Aliases:           []string{"rm"},
 		ValidArgsFunction: completion.NewValidVClusterNameFunc(globalFlags),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
@@ -86,6 +100,29 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 			cmd.log,
 		)
 
+		// If --all flag is set, create fetch the list of all Platform vClusters and delete them.
+		if cmd.DeleteAll {
+			// Initialize Platform vCluster lister.
+			platformVClusterLister, err := cli.NewPlatformVClusterLister(
+				&cli.ListOptions{},
+				cmd.GlobalFlags,
+				cmd.log,
+				platform.NewPlatformLister(platformClient),
+				find.NewVClusterLister(),
+			)
+			if err != nil {
+				return err
+			}
+
+			// Delete all Platform vClusters.
+			return deleteAllVClusters(
+				ctx,
+				cmd.log,
+				platformVClusterLister,
+				platformVClusterDeleter,
+			)
+		}
+
 		// Delete the specified Platform vCluster.
 		return platformVClusterDeleter.Delete(ctx, cli.ListProVCluster{
 			ListVCluster: cli.ListVCluster{
@@ -113,6 +150,28 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 			cmd.log,
 		)
 
+		// If --all flag is set, create fetch the list of all Docker vClusters and delete them.
+		if cmd.DeleteAll {
+			// Initialize Docker vCluster lister.
+			dockerVClusterLister, err := cli.NewDockerVClusterLister(
+				&cli.ListOptions{},
+				cmd.GlobalFlags,
+				cmd.log,
+				cli.NewDockerContainerLister(),
+			)
+			if err != nil {
+				return err
+			}
+
+			// Delete all Docker vClusters.
+			return deleteAllVClusters(
+				ctx,
+				cmd.log,
+				dockerVClusterLister,
+				dockerVClusterDeleter,
+			)
+		}
+
 		// Delete the specified Docker vCluster.
 		return dockerVClusterDeleter.Delete(ctx, cli.DockerVCluster{
 			Name: args[0],
@@ -138,6 +197,29 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 			cmd.log,
 		)
 
+		// If --all flag is set, create fetch the list of all Helm vClusters and delete them.
+		if cmd.DeleteAll {
+			// Initialize Helm vCluster lister.
+			helmVClusterLister, err := cli.NewHelmVClusterLister(
+				&cli.ListOptions{},
+				cmd.GlobalFlags,
+				cmd.log,
+				find.NewVClusterLister(),
+				platform.NewPlatformLister(platformClient),
+			)
+			if err != nil {
+				return err
+			}
+
+			// Delete all Helm vClusters.
+			return deleteAllVClusters(
+				ctx,
+				cmd.log,
+				helmVClusterLister,
+				helmVClusterDeleter,
+			)
+		}
+
 		// Delete the specified Helm vCluster.
 		return helmVClusterDeleter.Delete(ctx, cli.ListVCluster{
 			Name: args[0],
@@ -145,4 +227,49 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	default:
 		return fmt.Errorf("unsupported driver type: %s", driverType)
 	}
+}
+
+// deleteAllVClusters deletes all vClusters for the specified driver type (Platform, Helm, or Docker) using the common
+// listing and deleting interfaces.
+func deleteAllVClusters[T cli.VCluster](
+	ctx context.Context,
+	logger log.Logger,
+	vClusterLister cli.VClusterLister[T],
+	vClusterDeleter cli.VClusterDeleter[T],
+) error {
+	// List all vClusters installed.
+	vClusters, err := vClusterLister.List(ctx, "", false)
+	if err != nil {
+		return err
+	}
+
+	// When no vClusters exist, return early.
+	if len(vClusters) == 0 {
+		logger.Info("No vClusters found to delete")
+
+		return nil
+	}
+
+	// When vClusters exist, proceed to delete them.
+	var errs error
+	for i, vCluster := range vClusters {
+		// Delete the vCluster.
+		logger.Infof("Deleting vCluster (%d/%d): %s...", i+1, len(vClusters), vCluster.GetName())
+		if err = vClusterDeleter.Delete(ctx, vCluster); err != nil {
+			// When an error occurs, log it, add it to the combined error and continue deleting the next vCluster.
+			logger.Errorf("Failed to delete vCluster (%d/%d) %s: %v", i+1, len(vClusters), vCluster.GetName(), err)
+			errs = errors.Join(errs, err)
+
+			continue
+		}
+		logger.Infof("Successfully deleted vCluster (%d/%d): %s", i+1, len(vClusters), vCluster.GetName())
+	}
+
+	// If there were any errors while deleting vClusters, return a combined error.
+	if errs != nil {
+		return errs
+	}
+
+	// When all vCluster deletions succeeded, return nil.
+	return nil
 }

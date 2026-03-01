@@ -16,6 +16,7 @@ var platformFlags = []string{FlagNameProject}
 func AddCommonFlags(cmd *cobra.Command, options *cli.DeleteOptions) {
 	cmd.Flags().BoolVar(&options.Wait, "wait", true, "If enabled, vcluster will wait until the vcluster is deleted")
 	cmd.Flags().BoolVar(&options.DeleteContext, "delete-context", true, "If the corresponding kube context should be deleted if there is any")
+	cmd.Flags().BoolVarP(&options.DeleteAll, "all", "a", false, "If enabled, vcluster will delete all virtual clusters.")
 }
 
 func AddHelmFlags(cmd *cobra.Command, options *cli.DeleteOptions) {
