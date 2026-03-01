@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"cmp"
-	"context"
-	"errors"
 	"fmt"
 
 	"github.com/loft-sh/log"
@@ -115,12 +113,7 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 			}
 
 			// Delete all Platform vClusters.
-			return deleteAllVClusters(
-				ctx,
-				cmd.log,
-				platformVClusterLister,
-				platformVClusterDeleter,
-			)
+			return platformVClusterDeleter.DeleteAll(ctx, platformVClusterLister)
 		}
 
 		// Delete the specified Platform vCluster.
@@ -164,12 +157,7 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 			}
 
 			// Delete all Docker vClusters.
-			return deleteAllVClusters(
-				ctx,
-				cmd.log,
-				dockerVClusterLister,
-				dockerVClusterDeleter,
-			)
+			return dockerVClusterDeleter.DeleteAll(ctx, dockerVClusterLister)
 		}
 
 		// Delete the specified Docker vCluster.
@@ -212,12 +200,7 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 			}
 
 			// Delete all Helm vClusters.
-			return deleteAllVClusters(
-				ctx,
-				cmd.log,
-				helmVClusterLister,
-				helmVClusterDeleter,
-			)
+			return helmVClusterDeleter.DeleteAll(ctx, helmVClusterLister)
 		}
 
 		// Delete the specified Helm vCluster.
@@ -227,49 +210,4 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	default:
 		return fmt.Errorf("unsupported driver type: %s", driverType)
 	}
-}
-
-// deleteAllVClusters deletes all vClusters for the specified driver type (Platform, Helm, or Docker) using the common
-// listing and deleting interfaces.
-func deleteAllVClusters[T cli.VCluster](
-	ctx context.Context,
-	logger log.Logger,
-	vClusterLister cli.VClusterLister[T],
-	vClusterDeleter cli.VClusterDeleter[T],
-) error {
-	// List all vClusters installed.
-	vClusters, err := vClusterLister.List(ctx, "", false)
-	if err != nil {
-		return err
-	}
-
-	// When no vClusters exist, return early.
-	if len(vClusters) == 0 {
-		logger.Info("No vClusters found to delete")
-
-		return nil
-	}
-
-	// When vClusters exist, proceed to delete them.
-	var errs error
-	for i, vCluster := range vClusters {
-		// Delete the vCluster.
-		logger.Infof("Deleting vCluster (%d/%d): %s...", i+1, len(vClusters), vCluster.GetName())
-		if err = vClusterDeleter.Delete(ctx, vCluster); err != nil {
-			// When an error occurs, log it, add it to the combined error and continue deleting the next vCluster.
-			logger.Errorf("Failed to delete vCluster (%d/%d) %s: %v", i+1, len(vClusters), vCluster.GetName(), err)
-			errs = errors.Join(errs, err)
-
-			continue
-		}
-		logger.Infof("Successfully deleted vCluster (%d/%d): %s", i+1, len(vClusters), vCluster.GetName())
-	}
-
-	// If there were any errors while deleting vClusters, return a combined error.
-	if errs != nil {
-		return errs
-	}
-
-	// When all vCluster deletions succeeded, return nil.
-	return nil
 }

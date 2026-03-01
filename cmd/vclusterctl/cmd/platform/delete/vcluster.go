@@ -7,6 +7,7 @@ import (
 	"github.com/loft-sh/log"
 	"github.com/loft-sh/vcluster/pkg/cli"
 	"github.com/loft-sh/vcluster/pkg/cli/completion"
+	"github.com/loft-sh/vcluster/pkg/cli/find"
 	"github.com/loft-sh/vcluster/pkg/cli/flags"
 	flagsdelete "github.com/loft-sh/vcluster/pkg/cli/flags/delete"
 	"github.com/loft-sh/vcluster/pkg/cli/util"
@@ -71,6 +72,24 @@ func (cmd *VClusterCmd) Run(ctx context.Context, args []string) error {
 		cmd.GlobalFlags,
 		cmd.log,
 	)
+
+	// If --all flag is set, create fetch the list of all Platform vClusters and delete them.
+	if cmd.DeleteAll {
+		// Initialize Platform vCluster lister.
+		platformVClusterLister, err := cli.NewPlatformVClusterLister(
+			&cli.ListOptions{},
+			cmd.GlobalFlags,
+			cmd.log,
+			platform.NewPlatformLister(platformClient),
+			find.NewVClusterLister(),
+		)
+		if err != nil {
+			return err
+		}
+
+		// Delete all Platform vClusters.
+		return platformVClusterDeleter.DeleteAll(ctx, platformVClusterLister)
+	}
 
 	// Delete the specified Platform vCluster.
 	return platformVClusterDeleter.Delete(ctx, cli.ListProVCluster{

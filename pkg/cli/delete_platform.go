@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -40,6 +41,7 @@ func NewPlatformVClusterDeleter(
 	}
 }
 
+// Delete deletes a Platform based vCluster.
 func (d *platformVClusterDeleter) Delete(ctx context.Context, vCluster ListProVCluster) error {
 	if d.platformClient == nil {
 		return fmt.Errorf("platform client not set")
@@ -83,6 +85,52 @@ func (d *platformVClusterDeleter) Delete(ctx context.Context, vCluster ListProVC
 		d.log.Done("Virtual Cluster is deleted")
 	}
 
+	return nil
+}
+
+// DeleteAll deletes all Platform based vClusters using the provided lister to list vClusters and calling Delete for
+// each of them.
+func (d *platformVClusterDeleter) DeleteAll(ctx context.Context, lister VClusterLister[ListProVCluster]) error {
+	// List all Platform based vClusters installed.
+	vClusters, err := lister.List(ctx, "", false)
+	if err != nil {
+		return err
+	}
+
+	// When no Platform based vClusters exist, return early.
+	if len(vClusters) == 0 {
+		d.log.Info("No Platform based vClusters found to delete")
+
+		return nil
+	}
+
+	// When Platform based vClusters exist, proceed to delete them.
+	var errs error
+	for i, vCluster := range vClusters {
+		// Delete the vCluster.
+		d.log.Infof("Deleting Platform based vCluster (%d/%d): %s...", i+1, len(vClusters), vCluster.GetName())
+		if err = d.Delete(ctx, vCluster); err != nil {
+			// When an error occurs, log it, add it to the combined error and continue deleting the next vCluster.
+			d.log.Errorf(
+				"Failed to delete Platform based vCluster (%d/%d) %s: %v",
+				i+1,
+				len(vClusters),
+				vCluster.GetName(),
+				err,
+			)
+			errs = errors.Join(errs, err)
+
+			continue
+		}
+		d.log.Infof("Successfully deleted Platform based vCluster (%d/%d): %s", i+1, len(vClusters), vCluster.GetName())
+	}
+
+	// If there were any errors while deleting Platform based vClusters, return a combined error.
+	if errs != nil {
+		return errs
+	}
+
+	// When all Platform based vCluster deletions succeeded, return nil.
 	return nil
 }
 

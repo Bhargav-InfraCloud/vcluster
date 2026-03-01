@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -50,6 +51,7 @@ func NewDockerVClusterDeleter(
 	}
 }
 
+// Delete deletes a Docker based vCluster.
 func (d *dockerVClusterDeleter) Delete(ctx context.Context, vCluster DockerVCluster) error {
 	cmd := &deleteDocker{
 		GlobalFlags:   d.globalFlags,
@@ -58,6 +60,52 @@ func (d *dockerVClusterDeleter) Delete(ctx context.Context, vCluster DockerVClus
 	}
 
 	return cmd.delete(ctx, d.platformClient, vCluster.Name)
+}
+
+// DeleteAll deletes all Docker based vClusters using the provided lister to list vClusters and calling Delete for each
+// of them.
+func (d *dockerVClusterDeleter) DeleteAll(ctx context.Context, lister VClusterLister[DockerVCluster]) error {
+	// List all Docker based vClusters installed.
+	vClusters, err := lister.List(ctx, "", false)
+	if err != nil {
+		return err
+	}
+
+	// When no Docker based vClusters exist, return early.
+	if len(vClusters) == 0 {
+		d.log.Info("No Docker based vClusters found to delete")
+
+		return nil
+	}
+
+	// When Docker based vClusters exist, proceed to delete them.
+	var errs error
+	for i, vCluster := range vClusters {
+		// Delete the vCluster.
+		d.log.Infof("Deleting Docker based vCluster (%d/%d): %s...", i+1, len(vClusters), vCluster.GetName())
+		if err = d.Delete(ctx, vCluster); err != nil {
+			// When an error occurs, log it, add it to the combined error and continue deleting the next vCluster.
+			d.log.Errorf(
+				"Failed to delete Docker based vCluster (%d/%d) %s: %v",
+				i+1,
+				len(vClusters),
+				vCluster.GetName(),
+				err,
+			)
+			errs = errors.Join(errs, err)
+
+			continue
+		}
+		d.log.Infof("Successfully deleted Docker based vCluster (%d/%d): %s", i+1, len(vClusters), vCluster.GetName())
+	}
+
+	// If there were any errors while deleting Docker based vClusters, return a combined error.
+	if errs != nil {
+		return errs
+	}
+
+	// When all Docker based vCluster deletions succeeded, return nil.
+	return nil
 }
 
 func (cmd *deleteDocker) delete(ctx context.Context, platformClient platform.Client, vClusterName string) error {

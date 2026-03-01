@@ -59,6 +59,7 @@ type deleteHelm struct {
 // VClusterDeleter is a client used to delete a vCluster, common for all drivers (Helm, Platform, Docker).
 type VClusterDeleter[T VCluster] interface {
 	Delete(ctx context.Context, vClusters T) error
+	DeleteAll(ctx context.Context, lister VClusterLister[T]) error
 }
 
 // helmVClusterDeleter should implement VClusterDeleter[ListVCluster] to list Helm based vClusters.
@@ -87,6 +88,7 @@ func NewHelmVClusterDeleter(
 	}
 }
 
+// Delete deletes an Helm based vCluster.
 func (d *helmVClusterDeleter) Delete(ctx context.Context, vCluster ListVCluster) error {
 	cmd := deleteHelm{
 		GlobalFlags:   d.globalFlags,
@@ -277,6 +279,52 @@ func (d *helmVClusterDeleter) Delete(ctx context.Context, vCluster ListVCluster)
 		}
 	}
 
+	return nil
+}
+
+// DeleteAll deletes all Helm based vClusters using the provided lister to list vClusters and calling Delete for each of
+// them.
+func (d *helmVClusterDeleter) DeleteAll(ctx context.Context, lister VClusterLister[ListVCluster]) error {
+	// List all Helm based vClusters installed.
+	vClusters, err := lister.List(ctx, "", false)
+	if err != nil {
+		return err
+	}
+
+	// When no Helm based vClusters exist, return early.
+	if len(vClusters) == 0 {
+		d.log.Info("No Helm based vClusters found to delete")
+
+		return nil
+	}
+
+	// When Helm based vClusters exist, proceed to delete them.
+	var errs error
+	for i, vCluster := range vClusters {
+		// Delete the vCluster.
+		d.log.Infof("Deleting Helm based vCluster (%d/%d): %s...", i+1, len(vClusters), vCluster.GetName())
+		if err = d.Delete(ctx, vCluster); err != nil {
+			// When an error occurs, log it, add it to the combined error and continue deleting the next vCluster.
+			d.log.Errorf(
+				"Failed to delete Helm based vCluster (%d/%d) %s: %v",
+				i+1,
+				len(vClusters),
+				vCluster.GetName(),
+				err,
+			)
+			errs = errors.Join(errs, err)
+
+			continue
+		}
+		d.log.Infof("Successfully deleted Helm based vCluster (%d/%d): %s", i+1, len(vClusters), vCluster.GetName())
+	}
+
+	// If there were any errors while deleting Helm based vClusters, return a combined error.
+	if errs != nil {
+		return errs
+	}
+
+	// When all Helm based vCluster deletions succeeded, return nil.
 	return nil
 }
 
