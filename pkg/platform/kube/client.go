@@ -10,6 +10,9 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+// Interface is an extension of the kubernetes.Interface that also includes the Loft and Agent clients.
+//
+//go:generate mockery
 type Interface interface {
 	kubernetes.Interface
 	Loft() loftclient.Interface

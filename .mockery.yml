@@ -46,6 +46,11 @@ packages:
         config:
           # Output file name for this interface mock. This corresponds to the original file name.
           filename: find.go
+      # Interface `VClusterGetter` configuration.
+      VClusterGetter:
+        config:
+          # Output file name for this interface mock. This corresponds to the original file name.
+          filename: find.go
 
   # Package `pkg/platform` configuration.
   github.com/loft-sh/vcluster/pkg/platform:
@@ -62,3 +67,82 @@ packages:
         config:
           # Output file name for this interface mock. This corresponds to the original file name.
           filename: helper.go
+      # Interface `Client` configuration.
+      Client:
+        config:
+          # Output file name for this interface mock. This corresponds to the original file name.
+          filename: client.go
+
+  # Package `pkg/platform/kube` configuration.
+  github.com/loft-sh/vcluster/pkg/platform/kube:
+    config:
+      # Mocks directory for current package: `pkg/mocks/platform/kube/`
+      # - `pkg/mocks/` - Common directory for all mocks in the /pkg/ directory.
+      # - `platform/kube/`  - Corresponds to the original package structure.
+      dir: "{{.InterfaceDir}}/../../mocks/platform/kube"
+
+    # Interface-specific configuration.
+    interfaces:
+      # Interface `Interface` configuration.
+      Interface:
+        config:
+          # Output file name for this interface mock. This corresponds to the original file name.
+          filename: client.go
+
+  # Package `pkg/helm` configuration.
+  github.com/loft-sh/vcluster/pkg/helm:
+    config:
+      # Mocks directory for current package: `pkg/mocks/helm/`
+      # - `pkg/mocks/` - Common directory for all mocks in the /pkg/ directory.
+      # - `helm/`       - Corresponds to the original package structure.
+      dir: "{{.InterfaceDir}}/../mocks/helm"
+    # Interface-specific configuration.
+    interfaces:
+      # Interface `Client` configuration.
+      Client:
+        config:
+          # Output file name for this interface mock. This corresponds to the original file name.
+          filename: helm.go
+
+  # Package `pkg/kube/clientset` configuration.
+  github.com/loft-sh/vcluster/pkg/kube/clientset:
+    config:
+      # Mocks directory for current package: `pkg/mocks/kube/clientset/`
+      # - `pkg/mocks/` - Common directory for all mocks in the /pkg/ directory.
+      # - `kube/clientset/`       - Corresponds to the original package structure.
+      dir: "{{.InterfaceDir}}/../../mocks/kube/clientset"
+
+    # Interface-specific configuration.
+    interfaces:
+      # Interface `LoftClientSetInterface` configuration.
+      LoftClientSetInterface:
+        config:
+          # Output file name for this interface mock. This corresponds to the original file name.
+          filename: clientset.go
+
+      # Interface `ManagementV1Interface` configuration.
+      ManagementV1Interface:
+        config:
+          # Output file name for this interface mock. This corresponds to the original file name.
+          filename: clientset.go
+
+      # Interface `VirtualClusterInstanceInterface` configuration.
+      VirtualClusterInstanceInterface:
+        config:
+          # Output file name for this interface mock. This corresponds to the original file name.
+          filename: clientset.go
+
+  # Package `pkg/cli/helmclientinit` configuration.
+  github.com/loft-sh/vcluster/pkg/cli/helmclientinit:
+    config:
+      # Mocks directory for current package: `pkg/mocks/cli/helmclientinit/`
+      # - `pkg/mocks/` - Common directory for all mocks in the /pkg/ directory.
+      # - `cli/helmclientinit/`  - Corresponds to the original package structure.
+      dir: "{{.InterfaceDir}}/../../mocks/cli/helmclientinit"
+    # Interface-specific configuration.
+    interfaces:
+      # Interface `HelmClientInitializer` configuration.
+      HelmClientInitializer:
+        config:
+          # Output file name for this interface mock. This corresponds to the original file name.
+          filename: helm_client_initializer.go

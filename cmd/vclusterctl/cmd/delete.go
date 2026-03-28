@@ -3,6 +3,7 @@ package cmd
 import (
 	"cmp"
 	"fmt"
+	"os/exec"
 
 	"github.com/loft-sh/log"
 	"github.com/loft-sh/vcluster/pkg/cli"
@@ -11,8 +12,11 @@ import (
 	"github.com/loft-sh/vcluster/pkg/cli/find"
 	"github.com/loft-sh/vcluster/pkg/cli/flags"
 	flagsdelete "github.com/loft-sh/vcluster/pkg/cli/flags/delete"
+	"github.com/loft-sh/vcluster/pkg/cli/helmclientinit"
 	"github.com/loft-sh/vcluster/pkg/cli/util"
 	"github.com/loft-sh/vcluster/pkg/platform"
+	"github.com/loft-sh/vcluster/pkg/util/clihelper"
+	"github.com/loft-sh/vcluster/pkg/util/helmdownloader"
 	"github.com/spf13/cobra"
 )
 
@@ -177,11 +181,38 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 			cmd.log.Debugf("Failed to initialize platform client: %v", err)
 		}
 
+		// Get Helm binary path (which will also verify its presence and download if necessary) before proceeding with
+		// deletion.
+		helmBinaryPath, err := helmdownloader.GetHelmBinaryPath(ctx, cmd.log)
+		if err != nil {
+			return err
+		}
+
+		// Run `helm version` command to get the Helm binary version.
+		output, err := exec.Command(helmBinaryPath, "version", "--template", "{{.Version}}").Output()
+		if err != nil {
+			return err
+		}
+
+		// Verify Helm binary version compatibility.
+		if err = clihelper.CheckHelmVersion(string(output)); err != nil {
+			return err
+		}
+
 		// Initialize Helm vCluster deleter.
 		helmVClusterDeleter := cli.NewHelmVClusterDeleter(
 			platformClient,
+			find.NewVClusterGetter(),
+			find.NewVClusterLister(),
 			&cmd.DeleteOptions,
 			cmd.GlobalFlags,
+			helmBinaryPath,
+			// Initialize a Helm client initializer using the logger and the helm binary path as they are available at
+			// this point.
+			//
+			// Note: Using helmClientInitializer (instead of helm.NewClient directly) in Delete/DeleteAll enables
+			// mocking Helm client initialization in tests.
+			helmclientinit.NewHelmClientInitializer(cmd.log, helmBinaryPath),
 			cmd.log,
 		)
 

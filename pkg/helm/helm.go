@@ -45,6 +45,8 @@ const (
 )
 
 // Client defines the interface how to interact with helm
+//
+//go:generate mockery
 type Client interface {
 	Install(ctx context.Context, name, namespace string, options UpgradeOptions) error
 	Upgrade(ctx context.Context, name, namespace string, options UpgradeOptions) error

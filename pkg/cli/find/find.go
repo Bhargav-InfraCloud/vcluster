@@ -129,6 +129,41 @@ func GetPlatformVCluster(ctx context.Context, platformClient platform.Client, na
 	return nil, fmt.Errorf("unexpected error searching for selected virtual cluster")
 }
 
+// VClusterGetter defines the interface for listing virtual clusters.
+//
+//go:generate mockery
+type VClusterGetter interface {
+	// Get returns a virtual cluster in the current context, filtered by name and namespace.
+	//
+	// The logger is passed as a parameter rather than a struct field to allow caller-time injection and greater
+	// flexibility. For example, the caller can choose log.Discard or logger.ErrorStreamOnly(), while initialization
+	// typically uses the default logger instance so it remains consistent across all steps in the call stack.
+	Get(ctx context.Context, currentContext, name, namespace string, logger log.Logger) (*VCluster, error)
+}
+
+// vClusterGetter is a lister for virtual clusters that implements the VClusterGetter interface.
+type vClusterGetter struct{}
+
+// NewVClusterGetter creates a new VClusterGetter.
+func NewVClusterGetter() VClusterGetter {
+	return &vClusterGetter{}
+}
+
+// Get returns a virtual cluster in the current context, filtered by name and namespace.
+//
+// This is just a wrapper around the GetVCluster function to allow interface injection and testing.
+func (v *vClusterGetter) Get(
+	ctx context.Context,
+	currentContext string,
+	name string,
+	namespace string,
+	logger log.Logger,
+) (*VCluster, error) {
+	return GetVCluster(ctx, currentContext, name, namespace, logger)
+}
+
+// TODO(Bhargav-InfraCloud): Replace usages of this function with the `VClusterGetter` interface, move the logic into
+// the `Get()` method, and remove this function.
 func GetVCluster(ctx context.Context, context, name, namespace string, log log.Logger) (*VCluster, error) {
 	if name == "" {
 		return nil, fmt.Errorf("please specify a name")

@@ -40,7 +40,7 @@ func CleanupSyncedNamespaces(
 	mainPhysicalNamespace string,
 	vClusterName string,
 	restConfig *rest.Config,
-	k8sClient *kubernetes.Clientset,
+	k8sClient kubernetes.Interface,
 	logger log.Logger,
 ) error {
 	logger.Infof("Starting cleanup of vCluster '%s' namespaces.", vClusterName)
@@ -121,7 +121,7 @@ func cleanupImportedNamespace(ctx context.Context, dynClient dynamic.Interface, 
 }
 
 // getManagedNamespaces fetches all namespaces managed by this vCluster.
-func getManagedNamespaces(ctx context.Context, k8sClient *kubernetes.Clientset, mainPhysicalNamespace, vClusterName string) ([]corev1.Namespace, error) {
+func getManagedNamespaces(ctx context.Context, k8sClient kubernetes.Interface, mainPhysicalNamespace, vClusterName string) ([]corev1.Namespace, error) {
 	labelSelector := translate.MarkerLabel + "=" + translate.SafeConcatName(mainPhysicalNamespace, "x", vClusterName)
 	nsList, err := k8sClient.CoreV1().Namespaces().List(ctx, metav1.ListOptions{LabelSelector: labelSelector})
 	if err != nil {
@@ -133,7 +133,7 @@ func getManagedNamespaces(ctx context.Context, k8sClient *kubernetes.Clientset, 
 // deleteNamespace deletes a namespace and waits until it is fully terminated.
 func deleteNamespace(
 	ctx context.Context,
-	k8sClient *kubernetes.Clientset,
+	k8sClient kubernetes.Interface,
 	nsName string,
 	logger log.Logger,
 ) error {

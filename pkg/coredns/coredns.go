@@ -105,7 +105,7 @@ func GetUserID() int64 {
 	return int64(uid)
 }
 
-func DeleteCoreDNSComponents(ctx context.Context, client *kubernetes.Clientset, namespace string) error {
+func DeleteCoreDNSComponents(ctx context.Context, client kubernetes.Interface, namespace string) error {
 	labelSelector := labels.FormatLabels(map[string]string{constants.CoreDNSLabelKey: constants.CoreDNSLabelValue})
 
 	var errs []error

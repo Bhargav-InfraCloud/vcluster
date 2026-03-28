@@ -51,6 +51,9 @@ var (
 	ErrInvalidAccessKey = errors.New("invalid access key")
 )
 
+// Client is the interface for interacting with the vCluster platform API and Kubernetes clusters.
+//
+//go:generate mockery
 type Client interface {
 	LoginClient
 	Logout(ctx context.Context) error

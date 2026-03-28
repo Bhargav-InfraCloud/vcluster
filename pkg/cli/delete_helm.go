@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"time"
 
 	"github.com/ghodss/yaml"
@@ -12,12 +11,10 @@ import (
 	"github.com/loft-sh/log"
 	"github.com/loft-sh/vcluster/pkg/cli/find"
 	"github.com/loft-sh/vcluster/pkg/cli/flags"
+	"github.com/loft-sh/vcluster/pkg/cli/helmclientinit"
 	"github.com/loft-sh/vcluster/pkg/cli/localkubernetes"
 	"github.com/loft-sh/vcluster/pkg/coredns"
-	"github.com/loft-sh/vcluster/pkg/helm"
 	"github.com/loft-sh/vcluster/pkg/platform"
-	"github.com/loft-sh/vcluster/pkg/util/clihelper"
-	"github.com/loft-sh/vcluster/pkg/util/helmdownloader"
 	"github.com/loft-sh/vcluster/pkg/util/translate"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -51,7 +48,7 @@ type deleteHelm struct {
 
 	rawConfig  *clientcmdapi.Config
 	restConfig *rest.Config
-	kubeClient *kubernetes.Clientset
+	kubeClient kubernetes.Interface
 
 	log log.Logger
 }
@@ -67,24 +64,36 @@ var _ VClusterDeleter[ListVCluster] = (*helmVClusterDeleter)(nil)
 
 // helmVClusterDeleter is a deleter for Helm based vCluster.
 type helmVClusterDeleter struct {
-	platformClient platform.Client
-	options        *DeleteOptions
-	globalFlags    *flags.GlobalFlags
-	log            log.Logger
+	platformClient        platform.Client
+	helmVClusterGetter    find.VClusterGetter
+	helmVClusterLister    find.VClusterLister
+	options               *DeleteOptions
+	globalFlags           *flags.GlobalFlags
+	helmBinaryPath        string
+	helmClientInitializer helmclientinit.HelmClientInitializer
+	log                   log.Logger
 }
 
 // NewHelmVClusterDeleter creates a new helmVClusterDeleter.
 func NewHelmVClusterDeleter(
 	platformClient platform.Client,
+	helmVClusterGetter find.VClusterGetter,
+	helmVClusterLister find.VClusterLister,
 	options *DeleteOptions,
 	globalFlags *flags.GlobalFlags,
+	helmBinaryPath string,
+	helmClientInitializer helmclientinit.HelmClientInitializer,
 	log log.Logger,
 ) VClusterDeleter[ListVCluster] {
 	return &helmVClusterDeleter{
-		platformClient: platformClient,
-		options:        options,
-		globalFlags:    globalFlags,
-		log:            log,
+		platformClient:        platformClient,
+		helmVClusterGetter:    helmVClusterGetter,
+		helmVClusterLister:    helmVClusterLister,
+		options:               options,
+		globalFlags:           globalFlags,
+		helmBinaryPath:        helmBinaryPath,
+		helmClientInitializer: helmClientInitializer,
+		log:                   log,
 	}
 }
 
@@ -97,7 +106,7 @@ func (d *helmVClusterDeleter) Delete(ctx context.Context, vCluster ListVCluster)
 	}
 
 	// find vcluster
-	vClusterManifest, err := find.GetVCluster(ctx, cmd.Context, vCluster.Name, cmd.Namespace, cmd.log)
+	vClusterManifest, err := d.helmVClusterGetter.Get(ctx, cmd.Context, vCluster.Name, cmd.Namespace, cmd.log)
 	if err != nil {
 		if !cmd.IgnoreNotFound {
 			return err
@@ -130,22 +139,6 @@ func (d *helmVClusterDeleter) Delete(ctx context.Context, vCluster ListVCluster)
 		}
 	}
 
-	// test for helm
-	helmBinaryPath, err := helmdownloader.GetHelmBinaryPath(ctx, cmd.log)
-	if err != nil {
-		return err
-	}
-
-	output, err := exec.Command(helmBinaryPath, "version", "--template", "{{.Version}}").Output()
-	if err != nil {
-		return err
-	}
-
-	err = clihelper.CheckHelmVersion(string(output))
-	if err != nil {
-		return err
-	}
-
 	// check if namespace
 	if cmd.AutoDeleteNamespace {
 		namespace, err := cmd.kubeClient.CoreV1().Namespaces().Get(ctx, cmd.Namespace, metav1.GetOptions{})
@@ -156,7 +149,12 @@ func (d *helmVClusterDeleter) Delete(ctx context.Context, vCluster ListVCluster)
 		}
 	}
 
-	helmClient := helm.NewClient(cmd.rawConfig, cmd.log, helmBinaryPath)
+	// Initialize the Helm client using the vCluster kubeconfig.
+	//
+	// Note: Using helmClientInitializer (instead of helm.NewClient directly) enables mocking Helm client initialization
+	// in tests.
+	helmClient := d.helmClientInitializer.Get(cmd.rawConfig)
+
 	// before removing vCluster release, we need to get the config from values for later use
 	values, err := helmClient.GetValues(ctx, vCluster.Name, cmd.Namespace, true)
 	if err != nil {
@@ -236,7 +234,7 @@ func (d *helmVClusterDeleter) Delete(ctx context.Context, vCluster ListVCluster)
 	}
 
 	// check if there are any other vclusters in the namespace you are deleting vcluster in.
-	vClusters, err := find.ListVClusters(ctx, cmd.Context, "", cmd.Namespace, cmd.log)
+	vClusters, err := d.helmVClusterLister.List(ctx, cmd.Context, "", cmd.Namespace, cmd.log)
 	if err != nil {
 		return err
 	}
